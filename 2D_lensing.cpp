@@ -1,8 +1,6 @@
 #include <GL/glew.h>
 #include <GLFW/glfw3.h>
 #include <glm/glm.hpp>
-#include <glm/gtc/matrix_transform.hpp>
-#include <glm/gtc/type_ptr.hpp>
 #include <vector>
 #include <iostream>
 #define _USE_MATH_DEFINES
@@ -99,7 +97,7 @@ struct Ray{
     vector<vec2> trail; // trail of points
     double E, L;             // conserved quantities
 
-    Ray(vec2 pos, vec2 dir) : x(pos.x), y(pos.y), r(sqrt(pos.x * pos.x + pos.y * pos.y)), phi(atan2(pos.y, pos.x)), dr(dir.x), dphi(dir.y) {
+    Ray(vec2 pos, vec2 dir) : x(pos.x), y(pos.y), r(sqrt(pos.x * pos.x + pos.y * pos.y)), phi(atan2(pos.y, pos.x)), dr(dir.x * cos(phi) + dir.y * sin(phi)), dphi( ( -dir.x * sin(phi) + dir.y * cos(phi) ) / r) {
         // step 1) get polar coords (r, phi) :
         this->r = sqrt(x*x + y*y);
         this->phi = atan2(y, x);
