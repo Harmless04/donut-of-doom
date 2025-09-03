@@ -16,18 +16,4 @@ I'm writing this as I'm beginning this project (hopefully I complete it ;D) here
 
 I hope it works :/
 
-Edit: After completion of project -
-
-Thank you everyone for checking out the video, if you haven't it explains code in detail: https://www.youtube.com/watch?v=8-B6ryuBkCM
-
-## **Building Requirements:**
-
-1. C++ Compiler supporting C++ 17 or newer
-
-2. [Cmake](https://cmake.org/)
-
-3. [Vcpkg](https://vcpkg.io/en/)
-
-4. [Git](https://git-scm.com/)
-
 
