@@ -37,7 +37,16 @@ public:
             return nullptr;
         }
 
+        glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
+        glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
+        glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+
         GLFWwindow* window = glfwCreateWindow(WIDTH, HEIGHT, "ray tracer", NULL, NULL);
+        if (!window) {
+            std::cerr << "Failed to create GLFW window." << std::endl;
+            glfwTerminate();
+            return nullptr;
+        }
         glfwMakeContextCurrent(window);
         
         glewExperimental = GL_TRUE;
@@ -53,11 +62,11 @@ public:
     GLuint CreateShaderProgram(){
         const char* vertexShaderSource = R"(
         #version 330 core
-        layout (location = 0) in vec2 aPos;  // Changed to vec2
+        layout (location = 0) in vec2 aPos;
         layout (location = 1) in vec2 aTexCoord;
         out vec2 TexCoord;
         void main() {
-            gl_Position = vec4(aPos, 0.0, 1.0);  // Explicit z=0
+            gl_Position = vec4(aPos, 0.0, 1.0);
             TexCoord = aTexCoord;
         })";
 
@@ -70,20 +79,37 @@ public:
             FragColor = texture(screenTexture, TexCoord);
         })";
 
-        // vertex shader
         GLuint vertexShader = glCreateShader(GL_VERTEX_SHADER);
         glShaderSource(vertexShader, 1, &vertexShaderSource, nullptr);
         glCompileShader(vertexShader);
+        GLint success;
+        glGetShaderiv(vertexShader, GL_COMPILE_STATUS, &success);
+        if (!success) {
+            char infoLog[512];
+            glGetShaderInfoLog(vertexShader, 512, nullptr, infoLog);
+            std::cerr << "Vertex shader compilation failed:\n" << infoLog << std::endl;
+        }
 
-        // fragment shader
         GLuint fragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
         glShaderSource(fragmentShader, 1, &fragmentShaderSource, nullptr);
         glCompileShader(fragmentShader);
+        glGetShaderiv(fragmentShader, GL_COMPILE_STATUS, &success);
+        if (!success) {
+            char infoLog[512];
+            glGetShaderInfoLog(fragmentShader, 512, nullptr, infoLog);
+            std::cerr << "Fragment shader compilation failed:\n" << infoLog << std::endl;
+        }
 
         GLuint shaderProgram = glCreateProgram();
         glAttachShader(shaderProgram, vertexShader);
         glAttachShader(shaderProgram, fragmentShader);
         glLinkProgram(shaderProgram);
+        glGetProgramiv(shaderProgram, GL_LINK_STATUS, &success);
+        if (!success) {
+            char infoLog[512];
+            glGetProgramInfoLog(shaderProgram, 512, nullptr, infoLog);
+            std::cerr << "Shader program linking failed:\n" << infoLog << std::endl;
+        }
 
         glDeleteShader(vertexShader);
         glDeleteShader(fragmentShader);
@@ -246,26 +272,23 @@ int main(){
     Scene scene;
 
     scene.objs = {
-        Object(vec3(0.0f, 0.0f, -5.0f), 2.0f, Material(vec3(1.0f, 0.2f, 0.2f), 0.5f, 0.0f)),   // Moved further back and made bigger
-        Object(vec3(3.0f, 0.0f, -7.0f), 1.5f, Material(vec3(0.2f, 1.0f, 0.2f), 0.5f, 0.0f))    // Adjusted position and size
+        Object(vec3(0.0f, 0.0f, -5.0f), 2.0f, Material(vec3(1.0f, 0.2f, 0.2f), 0.5f, 0.0f)),
+        Object(vec3(3.0f, 0.0f, -7.0f), 1.5f, Material(vec3(0.2f, 1.0f, 0.2f), 0.5f, 0.0f))
     };
-    // -- loop -- //
     std::vector<unsigned char> pixels(WIDTH * HEIGHT * 3);
     while(!glfwWindowShouldClose(engine.window)){
         glClear(GL_COLOR_BUFFER_BIT);
 
-        // render texture (pxl by pxl)
         for(int y = 0; y < HEIGHT; ++y){
             for(int x = 0; x < WIDTH; ++x){
                 float aspectRatio = float(WIDTH) / float(HEIGHT);
                 float u = float(x) / float(WIDTH);
                 float v = float(y) / float(HEIGHT);
 
-                // direction of ray threw camera
                 vec3 direction(
                     (2.0f * u - 1.0f) * aspectRatio,
-                    -(2.0f * v - 1.0f),  // Flipped to correct orientation
-                    -1.0f  // Forward direction (negative z)
+                    -(2.0f * v - 1.0f),
+                    -1.0f
                 );
                 Ray ray(vec3(0.0f, 0.0f, 0.0f), normalize(direction));
                 vec3 color = scene.trace(ray);

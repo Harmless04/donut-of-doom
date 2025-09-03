@@ -450,7 +450,7 @@ int main() {
         raytrace(pixels, engine.WIDTH, engine.HEIGHT);
         engine.renderScene(pixels, engine.WIDTH, engine.HEIGHT);
 
-        // 2) FPS counting
+        // FPS counting
         framesCount++;
         auto t1 = Clock::now();
         double now = std::chrono::duration<double>(t1.time_since_epoch()).count();
@@ -459,7 +459,6 @@ int main() {
             framesCount   = 0;
             lastPrintTime = now;
         }
-
     }
 
     glfwDestroyWindow(engine.window);
@@ -493,4 +492,5 @@ int main() {
         //     framesCount   = 0;
         //     lastPrintTime = now;
         // }
+        //raytrace(pixels, engine.WIDTH, engine.HEIGHT);
         //raytrace(pixels, engine.WIDTH, engine.HEIGHT);
