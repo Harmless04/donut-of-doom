@@ -321,7 +321,7 @@ struct Engine {
         glUniform1i(glGetUniformLocation(shaderProgram, "screenTexture"), 0);
 
         glDisable(GL_DEPTH_TEST);  // draw as background
-        glDrawArrays(GL_TRIANGLE_STRIP, 0, 6);  // 2 triangles
+        glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);  // 2 triangles for quad
         glEnable(GL_DEPTH_TEST);
     }
     GLuint CreateShaderProgram(){
@@ -654,7 +654,7 @@ int main() {
         double dt    = now - lastTime;
         lastTime     = now;
 
-        // Gravity simulation
+        // Gravity simulation (improved stability)
         for (auto& obj : objects) {
             for (auto& obj2 : objects) {
                 if (&obj == &obj2) continue;
@@ -669,15 +669,26 @@ int main() {
                     double acc1 = Gforce / obj.mass;
                     std::vector<double> acc = {direction[0] * acc1, direction[1] * acc1, direction[2] * acc1};
                     if (Gravity) {
-                        obj.velocity.x += acc[0];
-                        obj.velocity.y += acc[1];
-                        obj.velocity.z += acc[2];
+                        // Limit velocity for stability
+                        obj.velocity.x += acc[0] * dt;
+                        obj.velocity.y += acc[1] * dt;
+                        obj.velocity.z += acc[2] * dt;
 
-                        obj.posRadius.x += obj.velocity.x;
-                        obj.posRadius.y += obj.velocity.y;
-                        obj.posRadius.z += obj.velocity.z;
-                        // Optionally print velocity for debugging
-                        // cout << "velocity: " <<obj.velocity.x<<", " <<obj.velocity.y<<", " <<obj.velocity.z<<endl;
+                        // Damping to avoid runaway velocities
+                        obj.velocity *= 0.999f;
+
+                        // Clamp velocity
+                        float vmag = length(obj.velocity);
+                        if (vmag > 1e8f) obj.velocity *= (1e8f / vmag);
+
+                        obj.posRadius.x += obj.velocity.x * dt;
+                        obj.posRadius.y += obj.velocity.y * dt;
+                        obj.posRadius.z += obj.velocity.z * dt;
+
+                        // Clamp positions to avoid drifting too far
+                        obj.posRadius.x = glm::clamp(obj.posRadius.x, -1e12f, 1e12f);
+                        obj.posRadius.y = glm::clamp(obj.posRadius.y, -1e12f, 1e12f);
+                        obj.posRadius.z = glm::clamp(obj.posRadius.z, -1e12f, 1e12f);
                     }
                 }
             }
@@ -695,15 +706,20 @@ int main() {
         engine.dispatchCompute(camera);
         engine.drawFullScreenQuad();
 
+        // FPS counter
+        framesCount++;
+        double tNow = chrono::duration<double>(Clock::now().time_since_epoch()).count();
+        if (tNow - lastPrintTime >= 1.0) {
+            cout << "FPS: " << framesCount / (tNow - lastPrintTime) << endl;
+            framesCount = 0;
+            lastPrintTime = tNow;
+        }
+
         // Present to screen
         glfwSwapBuffers(engine.window);
         glfwPollEvents();
     }
 
-    glfwDestroyWindow(engine.window);
-    glfwTerminate();
-    return 0;
-}
     glfwDestroyWindow(engine.window);
     glfwTerminate();
     return 0;
