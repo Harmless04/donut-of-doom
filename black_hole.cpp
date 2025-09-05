@@ -228,40 +228,59 @@ struct Engine {
     }
     void generateGrid(const vector<ObjectData>& objects) {
         const int gridSize = 25;
-        const float spacing = 1e10f;  // tweak this
+        const float spacing = 1e10f;
 
         vector<vec3> vertices;
+        vector<vec3> colors; // Add color per vertex
         vector<GLuint> indices;
 
         for (int z = 0; z <= gridSize; ++z) {
             for (int x = 0; x <= gridSize; ++x) {
                 float worldX = (x - gridSize / 2) * spacing;
                 float worldZ = (z - gridSize / 2) * spacing;
-
                 float y = 0.0f;
 
-                // ✅ Warp grid using Schwarzschild geometry
+                // Warp grid using Schwarzschild geometry
                 for (const auto& obj : objects) {
                     vec3 objPos = vec3(obj.posRadius);
                     double mass = obj.mass;
                     double radius = obj.posRadius.w;
-
                     double r_s = 2.0 * G * mass / (c * c);
                     double dx = worldX - objPos.x;
                     double dz = worldZ - objPos.z;
                     double dist = sqrt(dx * dx + dz * dz);
-
-                    // prevent sqrt of negative or divide-by-zero (inside or at the black hole center)
                     if (dist > r_s) {
                         double deltaY = 2.0 * sqrt(r_s * (dist - r_s));
                         y += static_cast<float>(deltaY) - 3e10f;
                     } else {
-                        // 🔴 For points inside or at r_s: make it dip down sharply
-                        y += 2.0f * static_cast<float>(sqrt(r_s * r_s)) - 3e10f;  // or add a deep pit
+                        y += 2.0f * static_cast<float>(sqrt(r_s * r_s)) - 3e10f;
                     }
                 }
 
                 vertices.emplace_back(worldX, y, worldZ);
+
+                // --- Color calculation for gravity lines ---
+                vec3 color = fixedLineColor;
+                if (gravityLineColorMode == GravityLineColorMode::Distance) {
+                    // Color by distance to black hole (blue = far, red = close)
+                    float dist = length(vec3(worldX, y, worldZ) - SagA.position);
+                    float t = glm::clamp((dist - float(SagA.r_s)) / 1e12f, 0.0f, 1.0f);
+                    color = mix(vec3(1,0,0), vec3(0,0,1), t);
+                } else if (gravityLineColorMode == GravityLineColorMode::Velocity) {
+                    // Color by velocity magnitude of the closest object
+                    float minDist = 1e20f;
+                    float vmag = 0.0f;
+                    for (const auto& obj : objects) {
+                        float d = length(vec3(worldX, y, worldZ) - vec3(obj.posRadius));
+                        if (d < minDist) {
+                            minDist = d;
+                            vmag = length(obj.velocity);
+                        }
+                    }
+                    float t = glm::clamp(vmag / 1e7f, 0.0f, 1.0f);
+                    color = mix(vec3(0,1,0), vec3(1,1,0), t); // green to yellow
+                }
+                colors.push_back(color);
             }
         }
 
@@ -277,21 +296,27 @@ struct Engine {
             }
         }
 
-        // 🔌 Upload to GPU
+        // 🔌 Upload to GPU (add color buffer)
         if (gridVAO == 0) glGenVertexArrays(1, &gridVAO);
         if (gridVBO == 0) glGenBuffers(1, &gridVBO);
         if (gridEBO == 0) glGenBuffers(1, &gridEBO);
+        static GLuint colorVBO = 0;
+        if (colorVBO == 0) glGenBuffers(1, &colorVBO);
 
         glBindVertexArray(gridVAO);
 
         glBindBuffer(GL_ARRAY_BUFFER, gridVBO);
         glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(vec3), vertices.data(), GL_DYNAMIC_DRAW);
+        glEnableVertexAttribArray(0); // location = 0
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(vec3), (void*)0);
+
+        glBindBuffer(GL_ARRAY_BUFFER, colorVBO);
+        glBufferData(GL_ARRAY_BUFFER, colors.size() * sizeof(vec3), colors.data(), GL_DYNAMIC_DRAW);
+        glEnableVertexAttribArray(1); // location = 1
+        glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(vec3), (void*)0);
 
         glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, gridEBO);
         glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.size() * sizeof(GLuint), indices.data(), GL_STATIC_DRAW);
-
-        glEnableVertexAttribArray(0); // location = 0
-        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(vec3), (void*)0);
 
         gridIndexCount = indices.size();
 
@@ -505,8 +530,7 @@ struct Engine {
             bool moving;
             int _pad4;
         } data;
-        vec3 fwd = normalize(cam.target - cam.position());
-        vec3 up = vec3(0, 1, 0); // y axis is up, so disk is in x-z plane
+a        vec3 up = vec3(0, 1, 0); // y axis is up, so disk is in x-z plane
         vec3 right = normalize(cross(fwd, up));
         up = cross(right, fwd);
 
@@ -632,6 +656,13 @@ void setupCameraCallbacks(GLFWwindow* window) {
     glfwSetKeyCallback(window, [](GLFWwindow* win, int key, int scancode, int action, int mods) {
         Camera* cam = (Camera*)glfwGetWindowUserPointer(win);
         cam->processKey(key, scancode, action, mods);
+
+        // Color mode switching
+        if (action == GLFW_PRESS) {
+            if (key == GLFW_KEY_1) gravityLineColorMode = GravityLineColorMode::Fixed;
+            if (key == GLFW_KEY_2) gravityLineColorMode = GravityLineColorMode::Distance;
+            if (key == GLFW_KEY_3) gravityLineColorMode = GravityLineColorMode::Velocity;
+        }
     });
 }
 
