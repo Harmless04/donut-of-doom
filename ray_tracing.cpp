@@ -180,7 +180,7 @@ struct Ray{
 struct Material{
     vec3 color;
     float specular;
-    float emission;
+    float emission; // emission intensity
     Material(vec3 c, float s, float e) : color(c), specular(s), emission(e) {}
 };
 struct Object{
@@ -221,28 +221,28 @@ public:
     vec3 trace(Ray &ray){
         float closest = INFINITY;
         const Object* hitObj = nullptr;
+        float tHit = 0.0f;
 
         for(auto& obj : objs){
-            float t;                    // distance to intersection
+            float t;
             if(obj.Intersect(ray, t)){
                 if(t < closest) {
                     closest = t;
                     hitObj = &obj;
+                    tHit = t;
                 }
             }
         };
         if(hitObj){
-            vec3 hitPoint = ray.origin + ray.direction * closest;     // point on obj hit by ray
+            vec3 hitPoint = ray.origin + ray.direction * closest;
             vec3 normal = hitObj->getNormal(hitPoint);
-            vec3 lightDir = normalize(lightPos - hitPoint);          // direction light to hitpoint
+            vec3 lightDir = normalize(lightPos - hitPoint);
 
-            float diff = std::max(glm::dot(normal, lightDir), 0.0f); // diffuse lighting
+            float diff = std::max(glm::dot(normal, lightDir), 0.0f);
 
-            Ray shadowRay(hitPoint + normal * 0.001f, lightDir); // slightly up to avoid errors ;P
-            // check if is in shadow
+            // Shadow check
+            Ray shadowRay(hitPoint + normal * 0.001f, lightDir);
             bool inShadow = false;
-            
-            // Actually check for shadows by testing if any object blocks light
             for(auto& obj : objs) {
                 float t;
                 if(obj.Intersect(shadowRay, t)) {
@@ -252,13 +252,57 @@ public:
             }
 
             vec3 color = hitObj->material.color;
-            float ambient = 0.1f; // minimum light level
+            float ambient = 0.1f;
+
+            // --- Sun glow effect ---
+            // If this is the sun, add emission and a soft glow
+            float sunGlow = 0.0f;
+            if (hitObj->material.emission > 0.5f) {
+                // Strong emission for sun
+                float glowRadius = hitObj->radius * 1.5f;
+                float distToCenter = length(hitPoint - hitObj->centre);
+                float glowEdge = hitObj->radius;
+                float glowFalloff = glm::smoothstep(glowEdge, glowRadius, distToCenter);
+                sunGlow = hitObj->material.emission * (1.0f - glowFalloff);
+
+                // Add a soft corona (outer glow)
+                float corona = 0.0f;
+                if (distToCenter > hitObj->radius) {
+                    float coronaFalloff = glm::smoothstep(glowRadius, glowRadius * 2.5f, distToCenter);
+                    corona = hitObj->material.emission * 0.7f * (1.0f - coronaFalloff);
+                }
+                sunGlow += corona;
+
+                // Add emission directly to color
+                color = color * (ambient + diff * 0.7f) + hitObj->material.color * sunGlow;
+                // Clamp for HDR-like effect
+                color = glm::min(color, vec3(2.0f, 1.7f, 0.5f));
+                return color;
+            }
 
             if (inShadow) {
                 return color * ambient;
             }
-
             return color * (ambient + diff * 0.9f);
+        }
+
+        // Sun glow "halo" even if not hit directly (for rays passing near the sun)
+        // Find the sun object
+        for (const auto& obj : objs) {
+            if (obj.material.emission > 0.5f) {
+                // Compute closest approach of ray to sun center
+                vec3 oc = ray.origin - obj.centre;
+                float b = glm::dot(ray.direction, oc);
+                float c = glm::dot(oc, oc) - obj.radius * obj.radius;
+                float discriminant = b * b - c;
+                float minDist = abs(glm::dot(ray.direction, oc));
+                if (discriminant < 0 && minDist < obj.radius * 2.5f) {
+                    // Not hitting, but close enough for halo
+                    float glow = obj.material.emission * (1.0f - minDist / (obj.radius * 2.5f));
+                    vec3 haloColor = obj.material.color * glow * 0.5f;
+                    return glm::min(haloColor, vec3(1.0f, 0.9f, 0.5f));
+                }
+            }
         }
 
         return vec3(0.0f, 0.0f, 0.1f); 
@@ -273,10 +317,9 @@ int main(){
 
     // Add a black hole (large dark sphere at the origin)
     Object blackhole(vec3(0.0f, 0.0f, -10.0f), 2.5f, Material(vec3(0.02f, 0.02f, 0.05f), 0.0f, 0.0f));
-    // Add a sun (bright yellow sphere, starts far away)
-    Object sun(vec3(0.0f, 0.0f, 10.0f), 1.5f, Material(vec3(1.0f, 0.9f, 0.2f), 0.2f, 0.0f));
+    // Add a sun (bright yellow, strong emission)
+    Object sun(vec3(0.0f, 0.0f, 10.0f), 1.5f, Material(vec3(1.2f, 1.1f, 0.3f), 0.2f, 2.5f));
 
-    // Add some static objects for scene variety
     scene.objs = {
         blackhole,
         sun,
@@ -285,7 +328,7 @@ int main(){
 
     std::vector<unsigned char> pixels(WIDTH * HEIGHT * 3);
 
-    float sunSpeed = 0.05f; // units per frame
+    float sunSpeed = 0.05f;
     bool sunFalling = true;
 
     while(!glfwWindowShouldClose(engine.window)){
@@ -293,17 +336,13 @@ int main(){
 
         // Animate the sun: move it toward the black hole
         if (sunFalling) {
-            // Move sun along -z axis
             scene.objs[1].centre.z -= sunSpeed;
-            // If sun reaches the black hole, stop it (simulate "falling in")
             float dist = glm::length(scene.objs[1].centre - scene.objs[0].centre);
             if (dist < scene.objs[0].radius + scene.objs[1].radius * 0.7f) {
                 sunFalling = false;
-                // Optionally, shrink the sun to simulate being "swallowed"
                 scene.objs[1].radius *= 0.95f;
-                // Fade out the sun color
                 scene.objs[1].material.color *= 0.95f;
-                // If sun is very small, hide it
+                scene.objs[1].material.emission *= 0.95f;
                 if (scene.objs[1].radius < 0.1f)
                     scene.objs[1].material.color = vec3(0.0f);
             }
@@ -324,6 +363,8 @@ int main(){
                 vec3 color = scene.trace(ray);
 
                 int index = (y * WIDTH + x) * 3;
+                // Tone mapping for HDR glow
+                color = color / (color + vec3(1.0f));
                 pixels[index + 0] = static_cast<unsigned char>(glm::clamp(color.r, 0.0f, 1.0f) * 255);
                 pixels[index + 1] = static_cast<unsigned char>(glm::clamp(color.g, 0.0f, 1.0f) * 255);
                 pixels[index + 2] = static_cast<unsigned char>(glm::clamp(color.b, 0.0f, 1.0f) * 255);
