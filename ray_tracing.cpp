@@ -271,13 +271,43 @@ int main(){
     Engine engine;
     Scene scene;
 
+    // Add a black hole (large dark sphere at the origin)
+    Object blackhole(vec3(0.0f, 0.0f, -10.0f), 2.5f, Material(vec3(0.02f, 0.02f, 0.05f), 0.0f, 0.0f));
+    // Add a sun (bright yellow sphere, starts far away)
+    Object sun(vec3(0.0f, 0.0f, 10.0f), 1.5f, Material(vec3(1.0f, 0.9f, 0.2f), 0.2f, 0.0f));
+
+    // Add some static objects for scene variety
     scene.objs = {
-        Object(vec3(0.0f, 0.0f, -5.0f), 2.0f, Material(vec3(1.0f, 0.2f, 0.2f), 0.5f, 0.0f)),
+        blackhole,
+        sun,
         Object(vec3(3.0f, 0.0f, -7.0f), 1.5f, Material(vec3(0.2f, 1.0f, 0.2f), 0.5f, 0.0f))
     };
+
     std::vector<unsigned char> pixels(WIDTH * HEIGHT * 3);
+
+    float sunSpeed = 0.05f; // units per frame
+    bool sunFalling = true;
+
     while(!glfwWindowShouldClose(engine.window)){
         glClear(GL_COLOR_BUFFER_BIT);
+
+        // Animate the sun: move it toward the black hole
+        if (sunFalling) {
+            // Move sun along -z axis
+            scene.objs[1].centre.z -= sunSpeed;
+            // If sun reaches the black hole, stop it (simulate "falling in")
+            float dist = glm::length(scene.objs[1].centre - scene.objs[0].centre);
+            if (dist < scene.objs[0].radius + scene.objs[1].radius * 0.7f) {
+                sunFalling = false;
+                // Optionally, shrink the sun to simulate being "swallowed"
+                scene.objs[1].radius *= 0.95f;
+                // Fade out the sun color
+                scene.objs[1].material.color *= 0.95f;
+                // If sun is very small, hide it
+                if (scene.objs[1].radius < 0.1f)
+                    scene.objs[1].material.color = vec3(0.0f);
+            }
+        }
 
         for(int y = 0; y < HEIGHT; ++y){
             for(int x = 0; x < WIDTH; ++x){
@@ -294,9 +324,9 @@ int main(){
                 vec3 color = scene.trace(ray);
 
                 int index = (y * WIDTH + x) * 3;
-                pixels[index + 0] = static_cast<unsigned char>(color.r * 255);
-                pixels[index + 1] = static_cast<unsigned char>(color.g * 255);
-                pixels[index + 2] = static_cast<unsigned char>(color.b * 255);
+                pixels[index + 0] = static_cast<unsigned char>(glm::clamp(color.r, 0.0f, 1.0f) * 255);
+                pixels[index + 1] = static_cast<unsigned char>(glm::clamp(color.g, 0.0f, 1.0f) * 255);
+                pixels[index + 2] = static_cast<unsigned char>(glm::clamp(color.b, 0.0f, 1.0f) * 255);
             }
         }
         

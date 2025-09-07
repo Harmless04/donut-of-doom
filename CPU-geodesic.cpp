@@ -19,6 +19,7 @@ using namespace std;
 using Clock = std::chrono::high_resolution_clock;
 
 // VARS
+
 double lastPrintTime = 0.0;
 int    framesCount   = 0;
 double c = 299792458.0;
