@@ -6,6 +6,8 @@
 #include <vector>
 #include <iostream>
 #include <cmath>
+#include <thread>
+#include <atomic>
 using namespace glm;
 
 // global vars
@@ -311,6 +313,8 @@ public:
 
 
 // --- main loop ---- //
+
+// --- Multithreaded rendering for faster performance ---
 int main(){
     Engine engine;
     Scene scene;
@@ -328,27 +332,14 @@ int main(){
 
     std::vector<unsigned char> pixels(WIDTH * HEIGHT * 3);
 
-    float sunSpeed = 0.05f;
+    float sunSpeed = 0.08f; // faster sun movement
     bool sunFalling = true;
 
-    while(!glfwWindowShouldClose(engine.window)){
-        glClear(GL_COLOR_BUFFER_BIT);
+    int numThreads = std::thread::hardware_concurrency();
+    if (numThreads < 1) numThreads = 4;
 
-        // Animate the sun: move it toward the black hole
-        if (sunFalling) {
-            scene.objs[1].centre.z -= sunSpeed;
-            float dist = glm::length(scene.objs[1].centre - scene.objs[0].centre);
-            if (dist < scene.objs[0].radius + scene.objs[1].radius * 0.7f) {
-                sunFalling = false;
-                scene.objs[1].radius *= 0.95f;
-                scene.objs[1].material.color *= 0.95f;
-                scene.objs[1].material.emission *= 0.95f;
-                if (scene.objs[1].radius < 0.1f)
-                    scene.objs[1].material.color = vec3(0.0f);
-            }
-        }
-
-        for(int y = 0; y < HEIGHT; ++y){
+    auto renderBlock = [&](int y0, int y1) {
+        for(int y = y0; y < y1; ++y){
             for(int x = 0; x < WIDTH; ++x){
                 float aspectRatio = float(WIDTH) / float(HEIGHT);
                 float u = float(x) / float(WIDTH);
@@ -370,8 +361,46 @@ int main(){
                 pixels[index + 2] = static_cast<unsigned char>(glm::clamp(color.b, 0.0f, 1.0f) * 255);
             }
         }
-        
+    };
+
+    double lastTime = glfwGetTime();
+    int frames = 0;
+    while(!glfwWindowShouldClose(engine.window)){
+        glClear(GL_COLOR_BUFFER_BIT);
+
+        // Animate the sun: move it toward the black hole
+        if (sunFalling) {
+            scene.objs[1].centre.z -= sunSpeed;
+            float dist = glm::length(scene.objs[1].centre - scene.objs[0].centre);
+            if (dist < scene.objs[0].radius + scene.objs[1].radius * 0.7f) {
+                sunFalling = false;
+                scene.objs[1].radius *= 0.95f;
+                scene.objs[1].material.color *= 0.95f;
+                scene.objs[1].material.emission *= 0.95f;
+                if (scene.objs[1].radius < 0.1f)
+                    scene.objs[1].material.color = vec3(0.0f);
+            }
+        }
+
+        // Multithreaded render
+        std::vector<std::thread> threads;
+        int block = HEIGHT / numThreads;
+        for (int t = 0; t < numThreads; ++t) {
+            int y0 = t * block;
+            int y1 = (t == numThreads - 1) ? HEIGHT : y0 + block;
+            threads.emplace_back(renderBlock, y0, y1);
+        }
+        for (auto& th : threads) th.join();
+
         engine.renderScene(pixels);
+
+        frames++;
+        double now = glfwGetTime();
+        if (now - lastTime > 1.0) {
+            std::cout << "FPS: " << frames / (now - lastTime) << std::endl;
+            frames = 0;
+            lastTime = now;
+        }
     }
 
     glfwTerminate();
